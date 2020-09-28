@@ -73,29 +73,34 @@ function prune_repo {
     #yeah leapseconds, dont care
     NOW_DAYS=$(( NOW / 86400 ))
 
-    echo NOW "$NOW"
-    echo NOW_DAYS "$NOW_DAYS"
+    PAGE=0
+    while [[ $(echo "$RELEASES" | wc -l) -gt 1 ]]; do
+      PAGE=$(( PAGE + 1))
+      while IFS= read -r line; do
+          TAG=$(echo "$line" | cut -d' ' -f1)
+          TIME=$(echo "$line" | cut -d' ' -f2)
+          DAYS_SINCE_0=$(( TIME / 86400));
+          AGE_DAYS=$(( NOW_DAYS - DAYS_SINCE_0 ));
 
-    echo "$RELEASES" | while IFS= read -r line ; do
-        TAG=$(echo "$line" | cut -d' ' -f1)
-        TIME=$(echo "$line" | cut -d' ' -f2)
-        DAYS_SINCE_0=$(( TIME / 86400));
-        AGE_DAYS=$(( NOW_DAYS - DAYS_SINCE_0 ));
-
-        DELETE=false
-        if [[ $TAG == "release-"* ]] && [[ $AGE_DAYS -gt 90 ]]; then
-            echo "$REPO:$TAG is a release. It's age is $AGE_DAYS -- deleting"
-            DELETE=true
-        elif [[ $TAG != "release-"* ]] && [[ $AGE_DAYS -gt 14 ]]; then
-            echo "$REPO:$TAG not release. It's age is $AGE_DAYS -- deleting"
-            DELETE=true
-        else
-            echo "$REPO:$TAG is new, leaving alone."
-        fi
-        if [[ $DELETE == "true" ]] && [[ $dryrun == "false" ]]; then
-            curl -X DELETE -u "$user:$pass" "https://cloud.docker.com/v2/repositories/$REPO/tags/$TAG/"
-        fi
-    done
+          DELETE=false
+          if [[ $TAG == "release-"* ]] && [[ $AGE_DAYS -gt 90 ]]; then
+              echo "$REPO:$TAG is a release. It's age is $AGE_DAYS -- deleting"
+              DELETE=true
+          elif [[ $TAG != "release-"* ]] && [[ $AGE_DAYS -gt 7 ]]; then
+              echo "$REPO:$TAG not release. It's age is $AGE_DAYS -- deleting"
+              DELETE=true
+          else
+              echo "$REPO:$TAG is new, leaving alone."
+          fi
+          if [[ $DELETE == "true" ]] && [[ $dryrun == "false" ]]; then
+              curl -X DELETE -u "$user:$pass" "https://cloud.docker.com/v2/repositories/$REPO/tags/$TAG/"
+          fi
+      done <<< "$RELEASES"
+      echo PAGE="$PAGE"
+      RELEASES=$(curl -L -s "https://registry.hub.docker.com/v2/repositories/${REPO}/tags?page_size=100&page=${PAGE}" | \
+      jq '."results"[] | (.name + " " + (.last_updated | sub(".[0-9]+Z$"; "Z") | fromdate | tostring ))' | \
+      sed 's/"//g')
+  done
 }
 
 prune_repo "libra/client"
